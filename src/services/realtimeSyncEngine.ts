@@ -57,38 +57,31 @@ class RealtimeSyncEngine {
       }
     );
 
-    // 2. Subscribe to Firebase Realtime Database across physical devices (Phone <-> Laptop)
+    // 2. Subscribe to Firebase Realtime Database — SINGLE SOURCE OF TRUTH for cross-device sync
+    //    This is the ONLY mechanism that works across physical devices (Phone <-> Laptop).
     dataStorageService.subscribeToStockRequests((firebaseRequests) => {
-      if (!firebaseRequests || firebaseRequests.length === 0) return;
       const store = useAppStore.getState();
-      
-      // Merge unique incoming requests
-      const mergedMap = new Map<string, any>();
-      store.liveRequests.forEach((req) => mergedMap.set(req.id, req));
-      firebaseRequests.forEach((req) => {
-        if (!mergedMap.has(req.id)) {
-          mergedMap.set(req.id, req);
-        } else {
-          // Merge responses
-          const existing = mergedMap.get(req.id);
-          const mergedResponses = [...(existing.responses || [])];
-          (req.responses || []).forEach((resp: any) => {
-            if (!mergedResponses.some((r) => r.pharmacyId === resp.pharmacyId)) {
-              mergedResponses.push(resp);
-            }
-          });
-          mergedMap.set(req.id, {
-            ...existing,
-            ...req,
-            responses: mergedResponses
-          });
-        }
-      });
+      const dismissed = store.dismissedRequestIds || [];
 
-      const updatedList = Array.from(mergedMap.values()).sort(
-        (a, b) => b.timestampMs - a.timestampMs
+      // Filter out requests dismissed/deleted by pharmacist
+      const validRequests = (firebaseRequests || []).filter(
+        (r) => !dismissed.includes(r.id)
       );
-      useAppStore.setState({ liveRequests: updatedList });
+
+      // Sort newest first
+      validRequests.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
+
+      // Detect genuinely new requests (not already in state) and show toast
+      const currentIds = new Set(store.liveRequests.map((r) => r.id));
+      const brandNewRequests = validRequests.filter((r) => !currentIds.has(r.id));
+      if (brandNewRequests.length > 0) {
+        brandNewRequests.forEach((req) => {
+          store.showToast('info', `⚡ LIVE RADAR: Patient needs "${req.medicineName}" nearby!`);
+        });
+      }
+
+      // Always update state from Firebase (authoritative source)
+      useAppStore.setState({ liveRequests: validRequests });
     });
 
     // 3. Periodic Expiry Cleanup (Every 10s)

@@ -1282,17 +1282,6 @@ if (typeof window !== 'undefined') {
     }
   );
 
-  // B. Firebase RTDB & Shared Network Storage Sync across Physical Devices (Phone <-> Laptop)
-  dataStorageService.subscribeToStockRequests((updatedRequests) => {
-    useAppStore.setState((state) => {
-      const dismissed = state.dismissedRequestIds || [];
-      if (!updatedRequests || updatedRequests.length === 0) {
-        return { liveRequests: [] };
-      }
-      // Strictly exclude any request that has been deleted/dismissed by pharmacist!
-      const validRequests = updatedRequests.filter((r) => !dismissed.includes(r.id));
-      validRequests.sort((a, b) => b.timestampMs - a.timestampMs);
-      return { liveRequests: validRequests };
-    });
-  });
+  // NOTE: Firebase RTDB subscription is handled exclusively in realtimeSyncEngine.ts
+  // to avoid duplicate listeners and race conditions across devices.
 }
