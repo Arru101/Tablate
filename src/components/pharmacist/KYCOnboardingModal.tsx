@@ -89,6 +89,25 @@ export const KYCOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   };
 
+  // Build a filtered list of pharmacies to check against — excluding mock/seed data
+  // and the current pharmacist's own store to prevent false-positive duplicate errors.
+  const getPharmaciesForDupCheck = () => {
+    const kycApprovedIds = new Set(
+      kycQueue
+        .filter((k) => k.status === 'approved')
+        .map((k) => k.pharmacyId)
+        .filter(Boolean)
+    );
+    return pharmacies.filter((p) => {
+      if (pharmacistStore && p.id === pharmacistStore.id) return false;
+      if (!kycApprovedIds.has(p.id)) return false;
+      return true;
+    });
+  };
+
+  const getKycQueueForDupCheck = () =>
+    kycQueue.filter((k) => !pharmacistStore || k.pharmacyId !== pharmacistStore.id);
+
   const checkFieldUniqueness = (field: 'drugLicenseNo' | 'licenseNumber' | 'aadhaar', value: string) => {
     if (!value || value.length < 5) {
       setDuplicateWarning(null);
@@ -97,7 +116,11 @@ export const KYCOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
     const checkObj = {
       [field === 'aadhaar' ? 'aadhaar' : field === 'drugLicenseNo' ? 'drugLicenseNo' : 'licenseNumber']: value
     };
-    const res = PharmacistDeduplicationService.checkDuplicate(checkObj, pharmacies, kycQueue);
+    const res = PharmacistDeduplicationService.checkDuplicate(
+      checkObj,
+      getPharmaciesForDupCheck(),
+      getKycQueueForDupCheck()
+    );
     if (res.isDuplicate) {
       setDuplicateWarning(res.reason || 'Duplicate record detected');
     } else {
@@ -112,8 +135,8 @@ export const KYCOnboardingModal: React.FC<Props> = ({ isOpen, onClose }) => {
         drugLicenseNo: formData.drugLicenseNo,
         licenseNumber: formData.licenseNumber
       },
-      pharmacies,
-      kycQueue
+      getPharmaciesForDupCheck(),
+      getKycQueueForDupCheck()
     );
 
     if (finalCheck.isDuplicate) {
