@@ -941,21 +941,48 @@ export const useAppStore = create<AppState>()(
       },
 
       submitKYCOnboarding: (kyc) => {
-        // Enforce strict 5-vector deduplication check
+        const currentStore = get().pharmacistStore;
+
+        // Only check against pharmacies that were added via the KYC approval flow.
+        // Exclude: (1) the current logged-in pharmacist's own store, (2) mock/seed pharmacies
+        // that don't have a real kycId (i.e. they were pre-loaded, not registered by a real user).
+        const kycApprovedIds = new Set(
+          get().kycQueue
+            .filter((k) => k.status === 'approved')
+            .map((k) => k.pharmacyId)
+            .filter(Boolean)
+        );
+
+        const pharmaciesToCheck = get().pharmacies.filter((p) => {
+          // Skip the currently logged-in pharmacist's own store
+          if (currentStore && p.id === currentStore.id) return false;
+          // Skip mock/seed pharmacies that were never created via the KYC flow
+          if (!kycApprovedIds.has(p.id)) return false;
+          return true;
+        });
+
+        // Also exclude their own pending KYC from the queue check
+        const kycQueueToCheck = get().kycQueue.filter(
+          (k) => !currentStore || k.pharmacyId !== currentStore.id
+        );
+
+        // Enforce strict 5-vector deduplication check against REAL registered pharmacies only
         const dupCheck = PharmacistDeduplicationService.checkDuplicate(
           {
             aadhaar: kyc.ownerAadhaar,
             drugLicenseNo: kyc.drugLicenseNo,
-            licenseNumber: kyc.licenseNumber
+            licenseNumber: kyc.licenseNumber,
+            phone: kyc.phone
           },
-          get().pharmacies,
-          get().kycQueue
+          pharmaciesToCheck,
+          kycQueueToCheck
         );
 
         if (dupCheck.isDuplicate) {
           get().showToast('error', `🚫 Duplicate Registration Blocked: ${dupCheck.reason}`);
           return;
         }
+
 
         const targetCity = kyc.city || 'Mumbai';
         const coords = resolveCityCoordinates(targetCity, kyc.address, kyc.state);
