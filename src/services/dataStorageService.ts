@@ -59,39 +59,64 @@ export class DataStorageService {
   }
 
   /**
-   * Listens to real-time changes on Firebase RTDB & Shared Storage across devices
+   * Listens to real-time changes on Firebase RTDB across physical devices (Phone <-> Laptop).
+   * Returns an unsubscribe function to clean up the listener.
    */
-  public subscribeToStockRequests(onUpdate: (requests: LiveStockRequest[]) => void) {
-    // A. Listen to Firebase Realtime Database
+  public subscribeToStockRequests(onUpdate: (requests: LiveStockRequest[]) => void): () => void {
+    let unsubFirebase: (() => void) | null = null;
+    let localPollInterval: ReturnType<typeof setInterval> | null = null;
+
+    // B. localStorage polling — SAME-DEVICE fallback only (tabs/windows on same browser).
+    //    This does NOT sync across physical devices (phone/laptop), only supplements Firebase.
+    const startLocalPolling = () => {
+      if (typeof window !== 'undefined' && !localPollInterval) {
+        localPollInterval = setInterval(() => {
+          try {
+            const sharedStr = localStorage.getItem('tablate_shared_requests_store');
+            if (sharedStr) {
+              const parsed: LiveStockRequest[] = JSON.parse(sharedStr);
+              if (parsed && parsed.length > 0) {
+                onUpdate(parsed);
+              }
+            }
+          } catch (err) {}
+        }, 2000);
+      }
+    };
+
+    // A. Firebase Realtime Database — the ONLY true cross-device sync mechanism.
+    //    onValue fires immediately with current data AND on every subsequent change.
     try {
       const dbRef = ref(rtdb, 'stock_requests');
-      onValue(dbRef, (snapshot) => {
-        const val = snapshot.val();
-        if (val) {
-          const reqList: LiveStockRequest[] = Object.values(val);
-          // Sort newest first
-          reqList.sort((a, b) => b.timestampMs - a.timestampMs);
-          onUpdate(reqList);
+      const unsub = onValue(
+        dbRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            const reqList: LiveStockRequest[] = Object.values(val);
+            reqList.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
+            onUpdate(reqList);
+          } else {
+            // Firebase returned empty/null — no active requests
+            onUpdate([]);
+          }
+        },
+        (error) => {
+          console.warn('[Firebase RTDB] Realtime listener error:', error);
+          startLocalPolling();
         }
-      });
+      );
+      unsubFirebase = unsub;
     } catch (err) {
-      console.warn('[Firebase RTDB] Realtime listener fallback:', err);
+      console.warn('[Firebase RTDB] Could not start listener:', err);
+      startLocalPolling();
     }
 
-    // B. Fast 2-second Polling Fallback for local network / cross-tab storage
-    if (typeof window !== 'undefined') {
-      setInterval(() => {
-        try {
-          const sharedStr = localStorage.getItem('tablate_shared_requests_store');
-          if (sharedStr) {
-            const parsed: LiveStockRequest[] = JSON.parse(sharedStr);
-            if (parsed && parsed.length > 0) {
-              onUpdate(parsed);
-            }
-          }
-        } catch (err) {}
-      }, 2000);
-    }
+    // Return cleanup function
+    return () => {
+      if (unsubFirebase) unsubFirebase();
+      if (localPollInterval) clearInterval(localPollInterval);
+    };
   }
 
   /**
