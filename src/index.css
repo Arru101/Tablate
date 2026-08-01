@@ -1,0 +1,82 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* Custom Theme Tokens & Glassmorphism Utilities */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 antialiased overflow-x-hidden min-h-screen;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Smooth Theme Transition for all elements */
+  *, ::before, ::after {
+    transition-property: color, background-color, border-color, shadow;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+  }
+
+  /* Custom Scrollbar for desktop and TV screens */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-slate-100 dark:bg-slate-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-700 rounded-full hover:bg-slate-400 dark:hover:bg-slate-600 transition;
+  }
+}
+
+/* Glassmorphism & UI Accents */
+.glass-panel {
+  @apply bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl;
+}
+
+.glass-nav {
+  @apply bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 sticky top-0 z-50;
+}
+
+/* Responsive Container Class for all Screen Sizes (Phone to 4K TV) */
+.responsive-container {
+  @apply w-full max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 2xl:px-12;
+}
+
+/* Prevent Leaflet Map & Controls from Overlapping Sticky Navbar on Smartphones */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 10 !important;
+}
+
+.leaflet-control {
+  z-index: 15 !important;
+}
+
+.custom-user-marker,
+.custom-pharm-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.leaflet-popup-content-wrapper {
+  @apply rounded-2xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl border border-slate-200 dark:border-slate-800 p-0 overflow-hidden;
+}
+
+.leaflet-popup-tip {
+  @apply bg-white dark:bg-slate-900;
+}
+
+/* Touch Friendly Targets for Mobile Devices */
+@media (max-width: 640px) {
+  button, input, select {
+    min-height: 44px;
+  }
+}

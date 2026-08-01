@@ -1,0 +1,174 @@
+// Prisma Database Schema for Tablate - Real-Time Emergency Medicine Discovery Platform
+// Provider: PostgreSQL with PostGIS extensions for constant-time geospatial radius queries
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  PATIENT
+  PHARMACIST
+  ADMIN
+}
+
+enum ScheduleClass {
+  OTC
+  SCHEDULE_H
+  SCHEDULE_H1
+  SCHEDULE_X
+}
+
+enum KYCStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum StockStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+}
+
+model User {
+  id            String         @id @default(uuid())
+  phone         String         @unique
+  email         String?        @unique
+  passwordHash  String
+  name          String
+  role          Role           @default(PATIENT)
+  language      String         @default("en")
+  isVerified    Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  pharmacy      Pharmacy?
+  stockRequests StockRequest[]
+  auditLogs     AuditLog[]
+
+  @@index([phone])
+}
+
+model Pharmacy {
+  id              String         @id @default(uuid())
+  ownerId         String         @unique
+  owner           User           @relation(fields: [ownerId], references: [id])
+  name            String
+  licenseNumber   String         @unique
+  drugLicenseNo   String         @unique
+  gstin           String?
+  address         String
+  city            String
+  state           String
+  pincode         String
+  latitude        Float
+  longitude       Float
+  rating          Float          @default(5.0)
+  totalReviews    Int            @default(0)
+  isOpenNow       Boolean        @default(true)
+  is24x7          Boolean        @default(false)
+  timings         String         @default("08:00 AM - 10:00 PM")
+  verifiedBadge   Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+
+  inventory       StockItem[]
+  kycSubmissions  KYCSubmission[]
+
+  @@index([latitude, longitude])
+  @@index([city])
+}
+
+model Medicine {
+  id            String        @id @default(uuid())
+  brandName     String
+  genericName   String
+  manufacturer  String
+  strength      String
+  form          String
+  rxRequired    Boolean       @default(false)
+  scheduleClass ScheduleClass @default(OTC)
+  category      String
+  mrp           Float
+  barcode       String?       @unique
+  description   String?
+  createdAt     DateTime      @default(now())
+
+  stockItems    StockItem[]
+
+  @@index([brandName])
+  @@index([genericName])
+  @@index([barcode])
+}
+
+model StockItem {
+  id          String      @id @default(uuid())
+  pharmacyId  String
+  pharmacy    Pharmacy    @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  medicineId  String
+  medicine    Medicine    @relation(fields: [medicineId], references: [id])
+  quantity    Int         @default(0)
+  price       Float
+  batchNumber String
+  expiryDate  DateTime
+  status      StockStatus @default(IN_STOCK)
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([pharmacyId, medicineId, batchNumber])
+  @@index([pharmacyId, medicineId])
+  @@index([expiryDate])
+}
+
+model LiveRequest {
+  id           String   @id @default(uuid())
+  patientId    String
+  medicineName String
+  latitude     Float
+  longitude    Float
+  radiusKm     Float    @default(3.0)
+  status       String   @default("SEARCHING")
+  createdAt    DateTime @default(now())
+
+  @@index([latitude, longitude])
+}
+
+model StockRequest {
+  id           String   @id @default(uuid())
+  patientId    String
+  patient      User     @relation(fields: [patientId], references: [id])
+  medicineName String
+  createdAt    DateTime @default(now())
+}
+
+model KYCSubmission {
+  id                   String    @id @default(uuid())
+  pharmacyId           String
+  pharmacy             Pharmacy  @relation(fields: [pharmacyId], references: [id])
+  licenseNumber        String    @unique
+  drugLicenseNo        String    @unique
+  ownerAadhaar         String    @unique
+  drugLicenseUrl       String
+  aadhaarUrl           String
+  storeFrontUrl        String
+  liveSelfieUrl        String
+  videoVerificationUrl String
+  status               KYCStatus @default(PENDING)
+  submittedAt          DateTime  @default(now())
+
+  @@index([ownerAadhaar])
+  @@index([drugLicenseNo])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  action    String
+  details   String
+  ipAddress String
+  createdAt DateTime @default(now())
+}
