@@ -2,6 +2,18 @@ import { rtdb } from '../config/firebase';
 import { ref, set as setFirebaseData, onValue } from 'firebase/database';
 import { Medicine, Pharmacy, KYCSubmission, LiveStockRequest, AuditLog } from '../types';
 
+export interface PharmacistOnlineStatus {
+  pharmacyId: string;
+  pharmacyName: string;
+  isOpenNow: boolean;
+  updatedAt: number;
+  address?: string;
+  city?: string;
+  phone?: string;
+  lat?: number;
+  lng?: number;
+}
+
 export class DataStorageService {
   /**
    * Saves a stock request to Firebase Realtime Database & Shared Storage
@@ -117,6 +129,51 @@ export class DataStorageService {
       if (unsubFirebase) unsubFirebase();
       if (localPollInterval) clearInterval(localPollInterval);
     };
+  }
+
+  /**
+   * Broadcasts a pharmacist's online/offline status to Firebase RTDB
+   * so ALL devices (phone/laptop) can see who is online in real time.
+   */
+  public async savePharmacistOnlineStatus(status: PharmacistOnlineStatus) {
+    try {
+      const dbRef = ref(rtdb, `pharmacist_status/${status.pharmacyId}`);
+      await setFirebaseData(dbRef, status);
+      console.log('[Firebase RTDB] Pharmacist status synced globally:', status.pharmacyId, status.isOpenNow);
+    } catch (err) {
+      console.warn('[Firebase RTDB] Pharmacist status sync failed:', err);
+    }
+  }
+
+  /**
+   * Subscribes to all pharmacist online/offline status changes from Firebase RTDB.
+   * Fires on every device (phone/laptop) whenever any pharmacist goes online/offline.
+   */
+  public subscribeToPharmacistStatus(
+    onUpdate: (statuses: PharmacistOnlineStatus[]) => void
+  ): () => void {
+    try {
+      const dbRef = ref(rtdb, 'pharmacist_status');
+      const unsub = onValue(
+        dbRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            const statuses: PharmacistOnlineStatus[] = Object.values(val);
+            onUpdate(statuses);
+          } else {
+            onUpdate([]);
+          }
+        },
+        (error) => {
+          console.warn('[Firebase RTDB] Pharmacist status listener error:', error);
+        }
+      );
+      return unsub;
+    } catch (err) {
+      console.warn('[Firebase RTDB] Could not subscribe to pharmacist status:', err);
+      return () => {};
+    }
   }
 
   /**

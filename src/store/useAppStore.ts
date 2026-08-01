@@ -18,7 +18,7 @@ import {
   INITIAL_KYC_QUEUE, 
   INITIAL_AUDIT_LOGS 
 } from '../data/mockData';
-import { dataStorageService } from '../services/dataStorageService';
+import { dataStorageService, PharmacistOnlineStatus } from '../services/dataStorageService';
 import { realtimeBroadcastService } from '../services/realtimeBroadcastService';
 import { resolveCityCoordinates, cacheUserLocation, getCachedUserLocation } from '../utils/geoUtils';
 import { PharmacistDeduplicationService } from '../services/pharmacistDeduplicationService';
@@ -375,7 +375,23 @@ export const useAppStore = create<AppState>()(
           };
         });
 
+        // Broadcast to same-device tabs/windows via BroadcastChannel
         realtimeBroadcastService.broadcastStoreStatus(pharmacyId, isNowOnline);
+
+        // Broadcast to ALL physical devices (phone/laptop) via Firebase RTDB
+        const updatedPharmacy = get().pharmacies.find((p) => p.id === pharmacyId);
+        const statusPayload: PharmacistOnlineStatus = {
+          pharmacyId,
+          pharmacyName: updatedPharmacy?.name || 'Pharmacy',
+          isOpenNow: isNowOnline,
+          updatedAt: Date.now(),
+          address: updatedPharmacy?.address,
+          city: updatedPharmacy?.city,
+          phone: updatedPharmacy?.phone,
+          lat: updatedPharmacy?.lat,
+          lng: updatedPharmacy?.lng
+        };
+        dataStorageService.savePharmacistOnlineStatus(statusPayload);
 
         get().showToast(
           isNowOnline ? 'success' : 'warning',

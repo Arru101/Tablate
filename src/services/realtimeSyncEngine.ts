@@ -84,7 +84,22 @@ class RealtimeSyncEngine {
       useAppStore.setState({ liveRequests: validRequests });
     });
 
-    // 3. Periodic Expiry Cleanup (Every 10s)
+    // 3. Subscribe to Pharmacist Online/Offline Status from Firebase RTDB
+    //    This syncs pharmacist availability to ALL devices (phone sees laptop pharmacist online, and vice versa).
+    dataStorageService.subscribeToPharmacistStatus((statuses) => {
+      if (!statuses || statuses.length === 0) return;
+      useAppStore.setState((state) => ({
+        pharmacies: state.pharmacies.map((p) => {
+          const match = statuses.find((s) => s.pharmacyId === p.id);
+          if (match) {
+            return { ...p, isOpenNow: match.isOpenNow };
+          }
+          return p;
+        })
+      }));
+    });
+
+    // 4. Periodic Expiry Cleanup (Every 10s)
     this.timerId = setInterval(() => {
       const store = useAppStore.getState();
       store.cleanupExpiredRequests();
