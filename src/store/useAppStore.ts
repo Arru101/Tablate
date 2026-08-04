@@ -498,7 +498,8 @@ export const useAppStore = create<AppState>()(
             pharmacies: state.pharmacies.map((p) => (p.id === updatedStore.id ? updatedStore : p))
           }));
 
-          // Global Multi-Device Online Status Broadcast via Firebase RTDB
+          // Global Multi-Device Online Status & Store Registry Broadcast via Firebase RTDB
+          dataStorageService.savePharmacyStore(updatedStore);
           realtimeBroadcastService.broadcastStoreStatus(updatedStore.id, true);
           dataStorageService.savePharmacistOnlineStatus({
             pharmacyId: updatedStore.id,
