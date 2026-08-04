@@ -114,7 +114,11 @@ class RealtimeSyncEngine {
       useAppStore.setState((state) => {
         const existingIds = new Set(state.pharmacies.map((p) => p.id));
         const updatedPharmacies = state.pharmacies.map((p) => {
-          const match = statuses.find((s) => s.pharmacyId === p.id);
+          const match = statuses.find(
+            (s) =>
+              s.pharmacyId === p.id ||
+              (s.pharmacyName && p.name && s.pharmacyName.trim().toLowerCase() === p.name.trim().toLowerCase())
+          );
           if (match) {
             return { ...p, isOpenNow: match.isOpenNow };
           }

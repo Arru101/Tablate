@@ -615,8 +615,28 @@ export const useAppStore = create<AppState>()(
       },
 
       logoutPharmacist: () => {
+        const currentStore = get().pharmacistStore;
+        if (currentStore) {
+          const offlineStore = { ...currentStore, isOpenNow: false };
+          set((state) => ({
+            pharmacies: state.pharmacies.map((p) => (p.id === currentStore.id ? offlineStore : p))
+          }));
+
+          realtimeBroadcastService.broadcastStoreStatus(currentStore.id, false);
+          dataStorageService.savePharmacistOnlineStatus({
+            pharmacyId: currentStore.id,
+            pharmacyName: currentStore.name,
+            isOpenNow: false,
+            updatedAt: Date.now(),
+            address: currentStore.address,
+            city: currentStore.city,
+            phone: currentStore.phone,
+            lat: currentStore.lat,
+            lng: currentStore.lng
+          });
+        }
         set({ isPharmacistRegistered: false, pharmacistStore: null });
-        get().showToast('info', 'Pharmacist Store Logged Out.');
+        get().showToast('info', 'Pharmacist Store Logged Out (Marked Offline).');
       },
 
       // Data Backup Download
