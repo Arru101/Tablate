@@ -1,4 +1,4 @@
-// High-Accuracy Indian Geodesic & Reverse Geocoding Utility Engine
+// High-Accuracy Indian Geodesic, Haversine Spatial Indexing & Reverse Geocoding Utility Engine
 
 export interface IndianCity {
   name: string;
@@ -26,6 +26,38 @@ export const INDIAN_MAJOR_CITIES: IndianCity[] = [
 ];
 
 const LOCATION_CACHE_KEY = 'tablate_cached_user_location';
+
+/**
+ * Calculates Haversine distance in kilometers between two GPS coordinates
+ */
+export const calculateHaversineDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return parseFloat((R * c).toFixed(2));
+};
+
+/**
+ * Estimates travel time in minutes based on urban/rural traffic conditions
+ */
+export const calculateETA = (distanceKm: number): number => {
+  if (distanceKm <= 0) return 3;
+  // Assume average urban speed of 20 km/h + 2 mins buffer for signals
+  const hours = distanceKm / 20;
+  return Math.max(3, Math.round(hours * 60 + 2));
+};
 
 export const cacheUserLocation = (lat: number, lng: number, addressName: string) => {
   try {
