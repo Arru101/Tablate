@@ -412,8 +412,8 @@ export const useAppStore = create<AppState>()(
       },
 
       logoutAdmin: () => {
-        set({ isAdminAuthenticated: false });
-        get().showToast('info', 'Admin logged out.');
+        set({ isAdminAuthenticated: false, currentRole: 'patient' });
+        get().showToast('info', 'Admin desk locked safely.');
       },
 
       // Pharmacist Login
@@ -488,6 +488,7 @@ export const useAppStore = create<AppState>()(
 
           const updatedStore: Pharmacy = {
             ...store,
+            isOpenNow: true,
             verifiedBadge: store.verifiedBadge || hasApprovedKyc
           };
 
@@ -497,7 +498,21 @@ export const useAppStore = create<AppState>()(
             pharmacies: state.pharmacies.map((p) => (p.id === updatedStore.id ? updatedStore : p))
           }));
 
-          get().showToast('success', `Sign-In Successful! Welcome back, ${updatedStore.name}.`);
+          // Global Multi-Device Online Status Broadcast via Firebase RTDB
+          realtimeBroadcastService.broadcastStoreStatus(updatedStore.id, true);
+          dataStorageService.savePharmacistOnlineStatus({
+            pharmacyId: updatedStore.id,
+            pharmacyName: updatedStore.name,
+            isOpenNow: true,
+            updatedAt: Date.now(),
+            address: updatedStore.address,
+            city: updatedStore.city,
+            phone: updatedStore.phone,
+            lat: updatedStore.lat,
+            lng: updatedStore.lng
+          });
+
+          get().showToast('success', `Sign-In Successful! Welcome back, ${updatedStore.name}. Store is now ONLINE globally on radar!`);
           return true;
         } else {
           get().showToast('error', `Login Failed: Incorrect User ID or Password.`);
@@ -577,6 +592,20 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           pharmacies: [newStore, ...state.pharmacies.filter((p) => p.id !== newStore.id)]
         }));
+
+        // Global Multi-Device Online Status Broadcast via Firebase RTDB
+        realtimeBroadcastService.broadcastStoreStatus(newStore.id, true);
+        dataStorageService.savePharmacistOnlineStatus({
+          pharmacyId: newStore.id,
+          pharmacyName: newStore.name,
+          isOpenNow: true,
+          updatedAt: Date.now(),
+          address: newStore.address,
+          city: newStore.city,
+          phone: newStore.phone,
+          lat: newStore.lat,
+          lng: newStore.lng
+        });
 
         get().showToast('success', `Pharmacist Account Created! Please Sign In with your User ID: "${cleanUserId}"`);
         return { userId: cleanUserId, password: cleanPass };

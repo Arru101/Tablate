@@ -126,8 +126,8 @@ export const PatientView: React.FC = () => {
       return nameMatch || addrMatch || cityMatch || medMatch;
     }
 
-    // Default: Keep user page clean until a pharmacist hits Available!
-    return false;
+    // Default: Display all online pharmacies in patient discovery list so user can see licensed stores immediately!
+    return pharm.isOpenNow;
   });
 
   // Sort matched pharmacies strictly by distance to user's current GPS location
