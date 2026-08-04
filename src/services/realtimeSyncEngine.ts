@@ -10,7 +10,7 @@ class RealtimeSyncEngine {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // 1. Initialize BroadcastChannel & LocalStorage Event Listeners (Multi-Tab / Multi-Window Sync)
+    // 1. Initialize Multi-Tab BroadcastChannel
     realtimeBroadcastService.initRealtimeSync(
       (newRequest) => {
         const store = useAppStore.getState();
@@ -57,21 +57,13 @@ class RealtimeSyncEngine {
       }
     );
 
-    // 2. Subscribe to Firebase Realtime Database — SINGLE SOURCE OF TRUTH for cross-device sync
-    //    This is the ONLY mechanism that works across physical devices (Phone <-> Laptop).
+    // 2. Subscribe to Emergency Stock Requests from Remote Database
     dataStorageService.subscribeToStockRequests((firebaseRequests) => {
       const store = useAppStore.getState();
       const dismissed = store.dismissedRequestIds || [];
-
-      // Filter out requests dismissed/deleted by pharmacist
-      const validRequests = (firebaseRequests || []).filter(
-        (r) => !dismissed.includes(r.id)
-      );
-
-      // Sort newest first
+      const validRequests = (firebaseRequests || []).filter((r) => !dismissed.includes(r.id));
       validRequests.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
 
-      // Detect genuinely new requests (not already in state) and show toast
       const currentIds = new Set(store.liveRequests.map((r) => r.id));
       const brandNewRequests = validRequests.filter((r) => !currentIds.has(r.id));
       if (brandNewRequests.length > 0) {
@@ -80,12 +72,43 @@ class RealtimeSyncEngine {
         });
       }
 
-      // Always update state from Firebase (authoritative source)
       useAppStore.setState({ liveRequests: validRequests });
     });
 
-    // 3. Subscribe to Pharmacist Online/Offline Status from Firebase RTDB
-    //    This syncs pharmacist availability to ALL devices (phone sees laptop pharmacist online, and vice versa).
+    // 3. Subscribe to Remote Database Pharmacies Directory
+    dataStorageService.subscribeToPharmacies((dbPharmacies) => {
+      if (!dbPharmacies || dbPharmacies.length === 0) return;
+      useAppStore.setState((state) => {
+        const dbMap = new Map(dbPharmacies.map((p) => [p.id, p]));
+        const merged = state.pharmacies.map((p) => dbMap.get(p.id) || p);
+        const newFromDb = dbPharmacies.filter((p) => !state.pharmacies.some((existing) => existing.id === p.id));
+        return { pharmacies: [...merged, ...newFromDb] };
+      });
+    });
+
+    // 4. Subscribe to Remote Database Inventory Updates
+    dataStorageService.subscribeToInventory((dbInventory) => {
+      if (!dbInventory || dbInventory.length === 0) return;
+      useAppStore.setState((state) => {
+        const dbMap = new Map(dbInventory.map((i) => [i.id, i]));
+        const merged = state.inventory.map((i) => dbMap.get(i.id) || i);
+        const newFromDb = dbInventory.filter((i) => !state.inventory.some((existing) => existing.id === i.id));
+        return { inventory: [...merged, ...newFromDb] };
+      });
+    });
+
+    // 5. Subscribe to Remote Database KYC Applications
+    dataStorageService.subscribeToKYCQueue((dbKYC) => {
+      if (!dbKYC || dbKYC.length === 0) return;
+      useAppStore.setState((state) => {
+        const dbMap = new Map(dbKYC.map((k) => [k.id, k]));
+        const merged = state.kycQueue.map((k) => dbMap.get(k.id) || k);
+        const newFromDb = dbKYC.filter((k) => !state.kycQueue.some((existing) => existing.id === k.id));
+        return { kycQueue: [...merged, ...newFromDb] };
+      });
+    });
+
+    // 6. Subscribe to Pharmacist Online Statuses from Remote Database
     dataStorageService.subscribeToPharmacistStatus((statuses) => {
       if (!statuses || statuses.length === 0) return;
       useAppStore.setState((state) => {
@@ -98,7 +121,6 @@ class RealtimeSyncEngine {
           return p;
         });
 
-        // Add any newly registered/logged-in online pharmacy from remote devices if missing locally
         const newRemoteStores: typeof state.pharmacies = [];
         for (const s of statuses) {
           if (s.isOpenNow && !existingIds.has(s.pharmacyId)) {
@@ -131,7 +153,7 @@ class RealtimeSyncEngine {
       });
     });
 
-    // 4. Periodic Expiry Cleanup (Every 10s)
+    // 7. Periodic Expiry Cleanup (Every 10s)
     this.timerId = setInterval(() => {
       const store = useAppStore.getState();
       store.cleanupExpiredRequests();

@@ -593,6 +593,9 @@ export const useAppStore = create<AppState>()(
           pharmacies: [newStore, ...state.pharmacies.filter((p) => p.id !== newStore.id)]
         }));
 
+        // Persist Store directly into Remote Database
+        dataStorageService.savePharmacyStore(newStore);
+
         // Global Multi-Device Online Status Broadcast via Firebase RTDB
         realtimeBroadcastService.broadcastStoreStatus(newStore.id, true);
         dataStorageService.savePharmacistOnlineStatus({
@@ -959,20 +962,23 @@ export const useAppStore = create<AppState>()(
       },
 
       updateInventoryQuantity: (inventoryId, newQty, status) => {
-        set((state) => ({
-          inventory: state.inventory.map((item) => {
+        set((state) => {
+          const updatedInv = state.inventory.map((item) => {
             if (item.id === inventoryId) {
-              return {
+              const updatedItem = {
                 ...item,
                 quantity: newQty,
                 status,
                 lastUpdated: 'Just now'
               };
+              dataStorageService.saveInventoryItem(updatedItem);
+              return updatedItem;
             }
             return item;
-          })
-        }));
-        get().showToast('success', 'Stock inventory successfully updated & saved!');
+          });
+          return { inventory: updatedInv };
+        });
+        get().showToast('success', 'Stock inventory successfully updated & saved to Database!');
       },
 
       addInventoryItem: (item) => {
@@ -982,7 +988,8 @@ export const useAppStore = create<AppState>()(
           lastUpdated: 'Just now'
         };
         set((state) => ({ inventory: [newInv, ...state.inventory] }));
-        get().showToast('success', `${item.medicine.brandName} added to store inventory.`);
+        dataStorageService.saveInventoryItem(newInv);
+        get().showToast('success', `${item.medicine.brandName} added to Database inventory.`);
       },
 
       submitKYCOnboarding: (kyc) => {
@@ -1136,6 +1143,10 @@ export const useAppStore = create<AppState>()(
           const updatedPharmaciesList = state.pharmacies.some((p) => p.id === updatedPharmacy.id)
             ? state.pharmacies.map((p) => (p.id === updatedPharmacy.id ? updatedPharmacy : p))
             : [updatedPharmacy, ...state.pharmacies];
+
+          // Persist approved store and updated KYC to Remote Database
+          dataStorageService.savePharmacyStore(updatedPharmacy);
+          dataStorageService.saveKYCSubmission({ ...kyc, status: 'approved', adminComments: adminComment });
 
           return {
             kycQueue: state.kycQueue.map((k) =>

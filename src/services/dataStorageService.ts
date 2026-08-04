@@ -1,6 +1,6 @@
 import { rtdb } from '../config/firebase';
 import { ref, set as setFirebaseData, onValue } from 'firebase/database';
-import { Medicine, Pharmacy, KYCSubmission, LiveStockRequest, AuditLog } from '../types';
+import { Medicine, Pharmacy, InventoryItem, KYCSubmission, LiveStockRequest, AuditLog } from '../types';
 
 export interface PharmacistOnlineStatus {
   pharmacyId: string;
@@ -16,91 +16,116 @@ export interface PharmacistOnlineStatus {
 
 export class DataStorageService {
   /**
-   * Saves a stock request to Firebase Realtime Database & Shared Storage
+   * 1. Saves/Updates a Pharmacy Store directly into Remote Database
    */
-  public async saveStockRequest(req: LiveStockRequest) {
-    // 1. Local / Broadcast Storage
+  public async savePharmacyStore(pharmacy: Pharmacy) {
     try {
-      const existingStr = localStorage.getItem('tablate_shared_requests_store') || '[]';
-      const existing: LiveStockRequest[] = JSON.parse(existingStr);
-      const filtered = existing.filter((r) => r.id !== req.id);
-      const updated = [req, ...filtered].slice(0, 50);
-      localStorage.setItem('tablate_shared_requests_store', JSON.stringify(updated));
-    } catch (err) {}
-
-    // 2. Firebase Realtime Database Sync across physical devices (Phone -> Laptop)
-    try {
-      const dbRef = ref(rtdb, `stock_requests/${req.id}`);
-      await setFirebaseData(dbRef, req);
-      console.log('[Firebase RTDB] Emergency Request synced across devices:', req.id);
+      const dbRef = ref(rtdb, `pharmacies/${pharmacy.id}`);
+      await setFirebaseData(dbRef, pharmacy);
+      console.log('[Database Storage] Pharmacy store saved to DB:', pharmacy.id);
     } catch (err) {
-      console.warn('[Firebase RTDB] Storage notice (offline/mock):', err);
+      console.warn('[Database Storage] Save notice:', err);
     }
   }
 
   /**
-   * Permanently deletes a stock request from Firebase RTDB & Shared Storage
+   * Subscribes to Real-Time Pharmacy Directory changes from Remote Database
+   */
+  public subscribeToPharmacies(onUpdate: (pharmacies: Pharmacy[]) => void): () => void {
+    try {
+      const dbRef = ref(rtdb, 'pharmacies');
+      return onValue(
+        dbRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            const list: Pharmacy[] = Object.values(val);
+            onUpdate(list);
+          }
+        },
+        (err) => console.warn('[Database Storage] Pharmacy listener warning:', err)
+      );
+    } catch (err) {
+      return () => {};
+    }
+  }
+
+  /**
+   * 2. Saves an Inventory Item directly into Remote Database
+   */
+  public async saveInventoryItem(item: InventoryItem) {
+    try {
+      const dbRef = ref(rtdb, `inventory/${item.id}`);
+      await setFirebaseData(dbRef, item);
+      console.log('[Database Storage] Inventory item saved to DB:', item.id);
+    } catch (err) {
+      console.warn('[Database Storage] Inventory notice:', err);
+    }
+  }
+
+  /**
+   * Subscribes to Real-Time Inventory changes from Remote Database
+   */
+  public subscribeToInventory(onUpdate: (inventory: InventoryItem[]) => void): () => void {
+    try {
+      const dbRef = ref(rtdb, 'inventory');
+      return onValue(
+        dbRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            const list: InventoryItem[] = Object.values(val);
+            onUpdate(list);
+          }
+        },
+        (err) => console.warn('[Database Storage] Inventory listener warning:', err)
+      );
+    } catch (err) {
+      return () => {};
+    }
+  }
+
+  /**
+   * 3. Saves an Emergency Stock Request directly into Remote Database
+   */
+  public async saveStockRequest(req: LiveStockRequest) {
+    try {
+      const dbRef = ref(rtdb, `stock_requests/${req.id}`);
+      await setFirebaseData(dbRef, req);
+      console.log('[Database Storage] Emergency Request saved to DB:', req.id);
+    } catch (err) {
+      console.warn('[Database Storage] Stock request notice:', err);
+    }
+  }
+
+  /**
+   * Permanently deletes a stock request from Remote Database
    */
   public async deleteStockRequest(requestId: string) {
     try {
-      const existingStr = localStorage.getItem('tablate_shared_requests_store') || '[]';
-      const existing: LiveStockRequest[] = JSON.parse(existingStr);
-      const filtered = existing.filter((r) => r.id !== requestId);
-      localStorage.setItem('tablate_shared_requests_store', JSON.stringify(filtered));
-    } catch (err) {}
-
-    try {
       const dbRef = ref(rtdb, `stock_requests/${requestId}`);
       await setFirebaseData(dbRef, null);
-      console.log('[Firebase RTDB] Emergency Request deleted:', requestId);
+      console.log('[Database Storage] Stock request deleted from DB:', requestId);
     } catch (err) {}
   }
 
   /**
-   * Permanently clears all stock requests from Firebase RTDB & Shared Storage
+   * Permanently clears all stock requests from Remote Database
    */
   public async clearAllStockRequests() {
     try {
-      localStorage.setItem('tablate_shared_requests_store', '[]');
-    } catch (err) {}
-
-    try {
       const dbRef = ref(rtdb, 'stock_requests');
       await setFirebaseData(dbRef, null);
     } catch (err) {}
   }
 
   /**
-   * Listens to real-time changes on Firebase RTDB across physical devices (Phone <-> Laptop).
-   * Returns an unsubscribe function to clean up the listener.
+   * Subscribes to Real-Time Emergency Stock Requests from Remote Database
    */
   public subscribeToStockRequests(onUpdate: (requests: LiveStockRequest[]) => void): () => void {
-    let unsubFirebase: (() => void) | null = null;
-    let localPollInterval: ReturnType<typeof setInterval> | null = null;
-
-    // B. localStorage polling — SAME-DEVICE fallback only (tabs/windows on same browser).
-    //    This does NOT sync across physical devices (phone/laptop), only supplements Firebase.
-    const startLocalPolling = () => {
-      if (typeof window !== 'undefined' && !localPollInterval) {
-        localPollInterval = setInterval(() => {
-          try {
-            const sharedStr = localStorage.getItem('tablate_shared_requests_store');
-            if (sharedStr) {
-              const parsed: LiveStockRequest[] = JSON.parse(sharedStr);
-              if (parsed && parsed.length > 0) {
-                onUpdate(parsed);
-              }
-            }
-          } catch (err) {}
-        }, 2000);
-      }
-    };
-
-    // A. Firebase Realtime Database — the ONLY true cross-device sync mechanism.
-    //    onValue fires immediately with current data AND on every subsequent change.
     try {
       const dbRef = ref(rtdb, 'stock_requests');
-      const unsub = onValue(
+      return onValue(
         dbRef,
         (snapshot) => {
           const val = snapshot.val();
@@ -109,52 +134,38 @@ export class DataStorageService {
             reqList.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
             onUpdate(reqList);
           } else {
-            // Firebase returned empty/null — no active requests
             onUpdate([]);
           }
         },
-        (error) => {
-          console.warn('[Firebase RTDB] Realtime listener error:', error);
-          startLocalPolling();
-        }
+        (error) => console.warn('[Database Storage] Stock request listener error:', error)
       );
-      unsubFirebase = unsub;
     } catch (err) {
-      console.warn('[Firebase RTDB] Could not start listener:', err);
-      startLocalPolling();
+      return () => {};
     }
-
-    // Return cleanup function
-    return () => {
-      if (unsubFirebase) unsubFirebase();
-      if (localPollInterval) clearInterval(localPollInterval);
-    };
   }
 
   /**
-   * Broadcasts a pharmacist's online/offline status to Firebase RTDB
-   * so ALL devices (phone/laptop) can see who is online in real time.
+   * 4. Broadcasts Pharmacist Online/Offline Status to Remote Database
    */
   public async savePharmacistOnlineStatus(status: PharmacistOnlineStatus) {
     try {
       const dbRef = ref(rtdb, `pharmacist_status/${status.pharmacyId}`);
       await setFirebaseData(dbRef, status);
-      console.log('[Firebase RTDB] Pharmacist status synced globally:', status.pharmacyId, status.isOpenNow);
+      console.log('[Database Storage] Pharmacist online status saved to DB:', status.pharmacyId, status.isOpenNow);
     } catch (err) {
-      console.warn('[Firebase RTDB] Pharmacist status sync failed:', err);
+      console.warn('[Database Storage] Pharmacist status save error:', err);
     }
   }
 
   /**
-   * Subscribes to all pharmacist online/offline status changes from Firebase RTDB.
-   * Fires on every device (phone/laptop) whenever any pharmacist goes online/offline.
+   * Subscribes to Pharmacist Online/Offline Statuses from Remote Database
    */
   public subscribeToPharmacistStatus(
     onUpdate: (statuses: PharmacistOnlineStatus[]) => void
   ): () => void {
     try {
       const dbRef = ref(rtdb, 'pharmacist_status');
-      const unsub = onValue(
+      return onValue(
         dbRef,
         (snapshot) => {
           const val = snapshot.val();
@@ -165,39 +176,80 @@ export class DataStorageService {
             onUpdate([]);
           }
         },
-        (error) => {
-          console.warn('[Firebase RTDB] Pharmacist status listener error:', error);
-        }
+        (error) => console.warn('[Database Storage] Pharmacist status listener error:', error)
       );
-      return unsub;
     } catch (err) {
-      console.warn('[Firebase RTDB] Could not subscribe to pharmacist status:', err);
       return () => {};
     }
   }
 
   /**
-   * Saves a KYC submission to Firebase Realtime Database
+   * 5. Saves a KYC Submission directly into Remote Database
    */
   public async saveKYCSubmission(kyc: KYCSubmission) {
     try {
       const dbRef = ref(rtdb, `kyc_submissions/${kyc.id}`);
       await setFirebaseData(dbRef, kyc);
-      console.log('[Firebase RTDB] KYC Submission persisted:', kyc.id);
+      console.log('[Database Storage] KYC Submission saved to DB:', kyc.id);
     } catch (err) {
-      console.warn('[Firebase RTDB] Storage notice:', err);
+      console.warn('[Database Storage] KYC notice:', err);
     }
   }
 
   /**
-   * Saves Audit Logs to Firebase
+   * Subscribes to Real-Time KYC Submissions from Remote Database
+   */
+  public subscribeToKYCQueue(onUpdate: (kycList: KYCSubmission[]) => void): () => void {
+    try {
+      const dbRef = ref(rtdb, 'kyc_submissions');
+      return onValue(
+        dbRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            const list: KYCSubmission[] = Object.values(val);
+            onUpdate(list);
+          }
+        },
+        (err) => console.warn('[Database Storage] KYC queue listener warning:', err)
+      );
+    } catch (err) {
+      return () => {};
+    }
+  }
+
+  /**
+   * 6. Saves Audit Log directly into Remote Database
    */
   public async saveAuditLog(log: AuditLog) {
     try {
       const dbRef = ref(rtdb, `audit_logs/${log.id}`);
       await setFirebaseData(dbRef, log);
     } catch (err) {
-      console.warn('[Firebase RTDB] Audit Log notice:', err);
+      console.warn('[Database Storage] Audit Log notice:', err);
+    }
+  }
+
+  /**
+   * Subscribes to Audit Logs from Remote Database
+   */
+  public subscribeToAuditLogs(onUpdate: (logs: AuditLog[]) => void): () => void {
+    try {
+      const dbRef = ref(rtdb, 'audit_logs');
+      return onValue(
+        dbRef,
+        (snapshot) => {
+          const val = snapshot.val();
+          if (val && typeof val === 'object') {
+            const list: AuditLog[] = Object.values(val);
+            list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+            onUpdate(list);
+          }
+        },
+        (err) => console.warn('[Database Storage] Audit log listener warning:', err)
+      );
+    } catch (err) {
+      return () => {};
     }
   }
 
